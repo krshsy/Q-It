@@ -3,7 +3,7 @@ let courts = [];
 let removalHistory = [];
 let matchHistory = [];
 let sessionActive = false;
-let sessionName = "Pickleball Open Play";
+let sessionName = "Q-It | Pickleball Manager";
 let manualOverride = false;
 
 const SOFT_REST_MS = 5 * 60 * 1000;
@@ -16,7 +16,6 @@ window.onload = () => {
     setInterval(updateTimers, 1000);
 };
 
-/** PERSISTENCE **/
 function saveData() {
     if (isViewOnly) return;
     const data = { queue, courts, removalHistory, matchHistory, sessionActive, sessionName };
@@ -32,7 +31,7 @@ function loadData() {
         removalHistory = d.removalHistory || [];
         matchHistory = d.matchHistory || [];
         sessionActive = d.sessionActive || false;
-        sessionName = d.sessionName || "Pickleball Open Play";
+        sessionName = d.sessionName || "Q-It | Pickleball Manager";
         
         if (sessionActive) {
             document.getElementById('setupControls').style.display = 'none';
@@ -53,24 +52,52 @@ function getWinRate(p) {
     return p.games ? Math.round((p.wins / p.games) * 100) : 0;
 }
 
-/** SESSION START **/
 function startSession() {
-    if (sessionActive && !confirm("This will wipe current data. Continue?")) return;
+    // 1. If a session is active, double-check before wiping
+    if (sessionActive) {
+        if (!confirm("This will permanently delete all current match history and players. Are you sure?")) {
+            return; 
+        }
+    }
+
+    // 2. THE NUCLEAR OPTION: Completely wipe the browser's memory for this app
+    localStorage.clear(); 
+    console.log("Storage Cleared.");
+
+    // 3. Capture the new setup values before they are wiped from the screen
+    const countInput = document.getElementById('courtCountInput');
+    const nameInput = document.getElementById('sessionNameInput');
     
-    // HARD RESET
-    localStorage.removeItem('pb_manager_v1');
-    queue = []; courts = []; removalHistory = []; matchHistory = [];
+    const count = parseInt(countInput.value) || 4;
+    const name = nameInput.value || "Q-It | Pickleball Manager";
+
+    // 4. Reset all internal lists
+    queue = []; 
+    courts = []; 
+    removalHistory = []; 
+    matchHistory = [];
     
-    const countInput = parseInt(document.getElementById('courtCountInput').value) || 4;
-    sessionName = document.getElementById('sessionNameInput').value || "Pickleball Open Play";
-    courts = Array.from({ length: countInput }, (_, i) => ({ id: i + 1, teamA: [], teamB: [], startTime: null }));
-    
+    // 5. Build the fresh courts
+    for (let i = 1; i <= count; i++) {
+        courts.push({ id: i, teamA: [], teamB: [], startTime: null });
+    }
+
+    // 6. Set the new state
     sessionActive = true;
+    sessionName = name;
+
+    // 7. Update the UI immediately
     document.getElementById('setupControls').style.display = 'none';
     document.getElementById('sessionControls').style.display = 'block';
     document.getElementById('displaySessionName').innerText = sessionName;
+
+    // 8. Save the fresh, empty state
     saveData();
+    
+    // 9. Force the display to empty out any old table rows
     updateDisplay();
+    
+    console.log("New Session Started: " + sessionName);
 }
 
 function populatePlayers() {
@@ -86,15 +113,22 @@ function populatePlayers() {
     updateDisplay();
 }
 
-/** FAIR PLAY PAIRING ENGINE **/
+/** --- FAIR PLAY PAIRING ENGINE --- **/
 function fillCourt(courtId) {
     if (queue.length < 4) return alert("Need 4 players.");
-    const court = courts.find(c => c.id === courtId);
-    let batch = queue.splice(0, 4);
+    
+    let batch = queue.slice(0, 4);
+    const getRCount = (r) => batch.filter(p => p.rank.toUpperCase() === r).length;
 
+    // Safety: Skip 3-I vs 1-B matchups
+    if (getRCount('I') === 3 && getRCount('B') === 1) {
+        return alert("Matchup Blocked: 3 'I' players and 1 'B' player is unfair. Please use 'Bump Down' to rearrange the queue.");
+    }
+
+    queue.splice(0, 4);
+    const court = courts.find(c => c.id === courtId);
     const getR = (r) => batch.filter(p => p.rank.toUpperCase() === r);
     const count = (r) => getR(r).length;
-
     let opts;
 
     if (count('I') === 2 && count('AB') === 2) {
@@ -113,7 +147,6 @@ function fillCourt(courtId) {
         opts = { a: [getR('AB')[0], getR('B')[0]], b: [getR('AB')[1], getR('B')[1]] };
     } 
     else {
-        // Default: Strongest + Weakest
         opts = { a: [batch[0], batch[3]], b: [batch[1], batch[2]] };
     }
 
@@ -142,18 +175,6 @@ function finishMatch(courtId, winner) {
     updateDisplay();
 }
 
-function removePlayer(name) {
-    const p = queue.find(x => x.name === name);
-    if (!p) return;
-    removalHistory.push({
-        name: p.name, rank: p.rank, games: p.games, wins: p.wins, losses: p.losses, 
-        winRate: getWinRate(p), timeRemoved: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-    });
-    queue = queue.filter(x => x.name !== name);
-    saveData();
-    updateDisplay();
-}
-
 function replacePlayer(courtId, team, idx) {
     if (queue.length === 0) return;
     const court = courts.find(c => c.id === courtId);
@@ -177,7 +198,17 @@ function bumpDownPlayer(name) {
     }
 }
 
-/** UI **/
+function removePlayer(name) {
+    const p = queue.find(x => x.name === name);
+    if (!p) return;
+    p.isEarlyOut = true;
+    p.timeRemoved = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    removalHistory.push(p);
+    queue = queue.filter(x => x.name !== name);
+    saveData();
+    updateDisplay();
+}
+
 function updateDisplay() {
     if (!sessionActive) return;
     if (!manualOverride) queue.sort((a,b) => a.games - b.games || a.lastFinished - b.lastFinished || a.jitter - b.jitter);
@@ -189,7 +220,7 @@ function updateDisplay() {
             <td>${p.wins}-${p.losses}</td>
             <td class="status-cell" data-start="${p.lastFinished}">Ready</td>
             <td class="admin-only">
-                <button class="btn-skip" onclick="bumpDownPlayer('${p.name}')">Bump</button>
+                <button class="btn-skip" onclick="bumpDownPlayer('${p.name}')">Bump Down</button>
                 <button class="btn-remove" onclick="removePlayer('${p.name}')">X</button>
             </td>
         </tr>`).join('');
@@ -201,16 +232,18 @@ function updateDisplay() {
     `).join('');
 
     document.getElementById('matchLog').innerHTML = matchHistory.slice().reverse().map(m => `
-        <div class="log-entry">
-            <div style="display:flex; justify-content:space-between; font-size:0.75em; color:#3b82f6;"><b>CT ${m.court}</b> <span>${m.time}</span></div>
+        <div class="match-log-entry">
+            <div style="display:flex; justify-content:space-between; font-size:0.75em; color:#3b82f6; margin-bottom:6px;">
+                <b>COURT ${m.court}</b> <span>${m.time}</span>
+            </div>
             <div class="log-winners">🏆 ${m.winners}</div>
-            <div class="log-losers">vs ${m.losers}</div>
+            <div style="font-size:0.65em; color:#94a3b8; margin:4px 0; text-transform:uppercase; font-weight:800;">Defeated</div>
+            <div style="color:#64748b; font-size:0.9em;">${m.losers}</div>
         </div>`).join('');
 
     document.getElementById('removalLog').innerHTML = removalHistory.slice().reverse().map(r => `
-        <div class="log-entry" style="border-left: 4px solid #cbd5e1;">
-            <b>${r.name}</b> <small style="color:#94a3b8;">Out ${r.timeRemoved}</small><br>
-            <small>${r.games}G | ${r.wins}W-${r.losses}L | ${r.winRate}%</small>
+        <div class="removal-entry">
+            <b>${r.name}</b> <small>(${r.timeRemoved})</small> — <span>${r.wins}W-${r.losses}L</span>
         </div>`).join('');
 
     document.getElementById('courts').innerHTML = courts.map(c => `
@@ -236,19 +269,24 @@ function updateTimers() {
     const now = Date.now();
     document.querySelectorAll('.court-timer, .status-cell').forEach(el => {
         const start = parseInt(el.dataset.start);
-        if (!start) return;
+        if (!start || start === 0) {
+            if (el.classList.contains('status-cell')) el.innerHTML = `<span style="color:#059669; font-weight:bold;">Ready</span>`;
+            return;
+        }
         const s = Math.floor((now - start) / 1000);
+        const mins = Math.floor(s/60);
+        const secs = s % 60;
         if (el.classList.contains('court-timer')) {
-            el.innerText = `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+            el.innerText = `${mins}:${secs.toString().padStart(2,'0')}`;
         } else {
             const isReady = (now - start) >= SOFT_REST_MS;
-            el.innerHTML = `<span style="color:${isReady?'#059669':'#ef4444'}; font-weight:bold;">${isReady?'Ready':'Resting'}</span>`;
+            el.innerHTML = `<span style="color:${isReady?'#059669':'#ef4444'}; font-weight:bold;">${isReady?'Ready':'Resting'} (${mins}m ${secs}s)</span>`;
         }
     });
 }
 
 function endSession() {
-    if (!confirm("End session?")) return;
+    if (!confirm("End session and show standings?")) return;
     sessionActive = false;
     document.getElementById('activeUI').style.display = 'none';
     document.getElementById('adminPanel').style.display = 'none';
@@ -264,17 +302,14 @@ function endSession() {
             <table>
                 <thead><tr><th>Rank</th><th>Player</th><th>W-L</th><th>Rate</th></tr></thead>
                 <tbody>${standings.map((p, i) => `
-                    <tr><td>${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</td><td>${p.name} ${getRankSpan(p.rank)}</td><td>${p.wins}-${p.losses}</td><td>${getWinRate(p)}%</td></tr>
-                `).join('')}</tbody>
+                    <tr>
+                        <td>${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</td>
+                        <td>${p.name} ${getRankSpan(p.rank)} ${p.isEarlyOut ? '<span class="rank-tag" style="background:#64748b; font-size:0.65em;">Early Out</span>':''}</td>
+                        <td>${p.wins}-${p.losses}</td>
+                        <td>${getWinRate(p)}%</td>
+                    </tr>`).join('')}</tbody>
             </table>
         </div>
-        ${isViewOnly ? '' : `<button onclick="handleReset()" class="btn-start" style="margin-top:20px;">New Session</button>`}
+        <button onclick="location.reload()" class="btn-start" style="margin-top:20px;">Start New Session</button>
     `;
-}
-
-function handleReset() {
-    if (confirm("Clear and start fresh?")) {
-        localStorage.removeItem('pb_manager_v1');
-        location.reload();
-    }
 }
