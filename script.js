@@ -236,13 +236,18 @@ function updateTimers() {
     const now = Date.now();
     document.querySelectorAll('.court-timer, .status-cell').forEach(el => {
         const start = parseInt(el.dataset.start);
-        if (!start) return;
+        if (!start || start === 0) {
+            if (el.classList.contains('status-cell')) el.innerHTML = `<span style="color:#059669; font-weight:bold;">Ready</span>`;
+            return;
+        }
         const s = Math.floor((now - start) / 1000);
+        const mins = Math.floor(s/60);
+        const secs = s % 60;
         if (el.classList.contains('court-timer')) {
-            el.innerText = `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+            el.innerText = `${mins}:${secs.toString().padStart(2,'0')}`;
         } else {
             const isReady = (now - start) >= SOFT_REST_MS;
-            el.innerHTML = `<span style="color:${isReady?'#059669':'#ef4444'}; font-weight:bold;">${isReady?'Ready':'Resting'}</span>`;
+            el.innerHTML = `<span style="color:${isReady?'#059669':'#ef4444'}; font-weight:bold;">${isReady?'Ready':'Resting'} (${mins}m ${secs}s)</span>`;
         }
     });
 }
