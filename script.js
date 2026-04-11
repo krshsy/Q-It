@@ -91,50 +91,33 @@ function fillCourt(courtId) {
     let batch = queue.slice(0, 4);
     const getRCount = (r) => batch.filter(p => p.rank.toUpperCase() === r).length;
 
-    // CIRCUIT BREAKER: Block 3 'I's vs 1 'B'
+    // Safety: Skip 3-I vs 1-B matchups
     if (getRCount('I') === 3 && getRCount('B') === 1) {
-        return alert("Unfair Matchup: 3 'I' players and 1 'B' player. Use 'Bump' to rearrange.");
+        return alert("Matchup Blocked: 3 'I' players and 1 'B' player is unfair. Please use 'Bump Down' to rearrange the queue.");
     }
 
-    // Officially pull from queue
     queue.splice(0, 4);
     const court = courts.find(c => c.id === courtId);
-    
     const getR = (r) => batch.filter(p => p.rank.toUpperCase() === r);
     const count = (r) => getR(r).length;
     let opts;
 
-    /** --- SPECIAL FAIRNESS RULES --- **/
-
-    // NEW RULE: 2 Bs + 1 AB + 1 I (Split the Bs)
-    if (count('B') === 2 && count('AB') === 1 && count('I') === 1) {
-        opts = { 
-            a: [getR('I')[0], getR('B')[0]], 
-            b: [getR('AB')[0], getR('B')[1]] 
-        };
-    }
-    // Existing Rule: 2 Is + 2 ABs (Split the Is)
-    else if (count('I') === 2 && count('AB') === 2) {
+    if (count('I') === 2 && count('AB') === 2) {
         opts = { a: [getR('I')[0], getR('AB')[0]], b: [getR('I')[1], getR('AB')[1]] };
     } 
-    // Existing Rule: 2 Is + 1 AB + 1 B (Split the Is, partner I with B)
     else if (count('I') === 2 && count('AB') === 1 && count('B') === 1) {
         opts = { a: [getR('I')[0], getR('B')[0]], b: [getR('I')[1], getR('AB')[0]] };
     }
-    // Existing Rule: 2 Is + 2 Bs (Split the Is)
     else if (count('I') === 2 && count('B') === 2) {
         opts = { a: [getR('I')[0], getR('B')[0]], b: [getR('I')[1], getR('B')[1]] };
     }
-    // Existing Rule: 2 ABs + 1 I + 1 B (Split the ABs)
     else if (count('AB') === 2 && count('I') === 1 && count('B') === 1) {
-        opts = { a: [getR('AB')[0], getR('I')[0]], b: [getR('AB')[1], getR('B')[0]] };
+        opts = { a: [getR('AB')[0], getR('AB')[1]], b: [getR('I')[0], getR('B')[0]] };
     }
-    // Existing Rule: 2 ABs + 2 Bs (Split the ABs)
     else if (count('AB') === 2 && count('B') === 2) {
         opts = { a: [getR('AB')[0], getR('B')[0]], b: [getR('AB')[1], getR('B')[1]] };
     } 
     else {
-        // Balanced Default: 1st/4th vs 2nd/3rd
         opts = { a: [batch[0], batch[3]], b: [batch[1], batch[2]] };
     }
 
